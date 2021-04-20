@@ -1,0 +1,276 @@
+---
+title: 데이터분석및활용 과제 2
+author: 20170783 이수민
+output: rmarkdown::github_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = FALSE}
+library(readr)
+library(caret)
+library(ggplot2)
+```
+
+import data
+
+```{r, message = FALSE}
+data <- read_csv("CommonBank.csv")
+```
+```{r}
+str(data)
+```
+
+### 데이터 전처리
+
+1. Factorize the target variable 'PersonalLoan'
+
+```{r}
+data$PersonalLoan <- as.factor(data$PersonalLoan)
+data$PersonalLoan <- factor(data$PersonalLoan, levels = c("0","1"), labels = c("Reject","Accept"))
+```
+
+2. Split the data into train / test set
+
+```{r}
+data_train <- data[1:4000,]
+data_train_label <- data$PersonalLoan[1:4000]
+data_test <- data[4001:5000,]
+data_test_label <- data$PersonalLoan[4001:5000]
+```
+
+
+### 문제1
+**첫 4000명의 데이터를 training set으로, 나머지 1000명의 데이터를 test set으로 사용하자. Training set과 test set에서의 PersonalLoan 값의 분포를 비교해 보자.**
+
+**첫번째 방법**: data_train과 data_test 데이터셋에 대한 원형 그래프 각각 만들기
+
+Target 변수의 비율 확인
+
+```{r}
+table(data$PersonalLoan)
+```
+
+ggplot function을 이용하여 원형 그래프 만들기
+```{r}
+ggplot(data_train,aes(x = "", y = "", fill = PersonalLoan)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Train Data의 PersonalLoan 변수 분포") +
+  scale_fill_brewer(palette = "Pastel1")
+
+ggplot(data_test,aes(x = "", y = "", fill = PersonalLoan)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Test Data의 PersonalLoan 변수 분포") +
+  scale_fill_brewer(palette = "Pastel1")
+
+```
+
+**두번째 방법**: 'split'이라는 파생변수를 dataset에 추가하여 train set인지 test set인지를 표시한다.
+```{r}
+data$split <- "train"
+data[data$ID > 4000, "split"] = "test"
+```
+
+비율이 1000:4000이 맞는지 확인한다
+```{r}
+table(data$split)
+```
+
+geom_bar() functio의 position option을 "fill"로 설정하여, 각 bar를 100%로 늘린다.
+범주 별 비율에 따라 bar의 면적을 나누어 , train set 와 test set에서의 target variable의 비율을 확인한다.
+
+```{r}
+ggplot(data,
+       aes(x = split,
+           fill = PersonalLoan)) +
+  geom_bar(position = "fill") + 
+  labs(y = "Proportion") +
+  scale_fill_brewer(palette = "Pastel1") + theme_minimal()
+```
+
+
+
+### 문제2
+**7-NN을 적용해 보자. 이때 ID와 ZIP.code는 feature에서 제외한다.**
+
+1. ID와 ZIP.code 변수를 feature 제외시키기 + split 변수도 제외
+
+```{r}
+data <- data[c(-1,-5,-15)]
+```
+2. 범주형 데이터 factorize
+Education 변수는 1,2,3으로 factorize할 수 있지만, numeric 변수를 모두 normalize하게 된다면 의미를 가질 수 있으므로 제외시킴 (가족구성원수도 마찬가지)
+
+```{r}
+convert <- c(9,10,11,12)
+data[,convert] <- lapply(data[,convert],factor)
+str(data)
+```
+
+ 
+3. normalize the numeric features
+
+```{r}
+normalize <- function(x) {
+  return ((x-min(x))/(max(x) - min(x)))
+}
+data_n <- as.data.frame(lapply(data[c(1,2,3,4,5,6,7)], normalize))
+```
+
+4. data merging (by cbind function)
+
+```{r}
+data_m <- as.data.frame(data[c(9,10,11,12)])
+data_normalized <- cbind(data_m, data_n)
+str(data_normalized)
+```
+
+4. train / test split
+
+```{r}
+data_train <- data_normalized[1:4000,]
+data_train_label <- data$PersonalLoan[1:4000]
+data_test <- data_normalized[4001:5000,]
+data_test_label <- data$PersonalLoan[4001:5000]
+```
+
+5. k-NN algorithm 
+```{r, message = FALSE}
+library(class)
+```
+```{r}
+set.seed(2020)
+data_test_pred <- knn(train = data_train, test = data_test, cl = data_train_label, k =7)
+```
+
+6. Evaluation
+
+```{r}
+library(gmodels)
+```
+```{r}
+CrossTable(x=data_test_label, y=data_test_pred, prop.chisq = FALSE)
+```
+```{r}
+datacM <- confusionMatrix(data_test_pred, data_test_label, positive = "Accept")
+datacM
+```
+
+
+### 문제3
+**다양한 k 값에 대해 k-NN을 적용해 보고 test set에 대한 예측 성능을 비교해 보자. k가 어떤 값을 가질때 모델의 성능이 가장 우수한가?**
+
+```{r}
+p = seq(1,99,2)
+for(i in p) {
+  data_test_pred <- knn(data_train, data_test, cl=data_train_label, k= i)
+  data_cm <- confusionMatrix(data_test_pred, data_test_label, positive = "Accept")
+  Accuracy <- c(Accuracy, datacM$overall[1])
+  Sensitivity <- c(Sensitivity, datacM$byClass[1])
+  Specificity <- c(specificity, datacM$byClass[2])
+}
+
+data_visualize <- data.frame(k = p,
+                        value = c(Accuracy, Sensitivity, Specificity),
+                        type = c(rep("Accuracy",50),rep("Sensitivity",50),rep("Specificity",50)))
+
+ggplot(data_visualize, aes(x = k, y = value, color = type)) + geom_point() + geom_line() + theme_bw()
+
+```
+
+```{r}
+data_test_pred1 <- knn(train = data_train, test = data_test, cl = data_train_label, k =1)
+CrossTable(x=data_test_label, y=data_test_pred1, prop.chisq = FALSE)
+
+data_test_pred3 <- knn(train = data_train, test = data_test, cl = data_train_label, k =3)
+CrossTable(x=data_test_label, y=data_test_pred3, prop.chisq = FALSE)
+
+data_test_pred5 <- knn(train = data_train, test = data_test, cl = data_train_label, k =5)
+CrossTable(x=data_test_label, y=data_test_pred5, prop.chisq = FALSE)
+
+data_test_pred7 <- knn(train = data_train, test = data_test, cl = data_train_label, k =7)
+CrossTable(x=data_test_label, y=data_test_pred7, prop.chisq = FALSE)
+
+data_test_pred15 <- knn(train = data_train, test = data_test, cl = data_train_label, k =15)
+CrossTable(x=data_test_label, y=data_test_pred15, prop.chisq = FALSE)
+
+data_test_pred21 <- knn(train = data_train, test = data_test, cl = data_train_label, k =21)
+CrossTable(x=data_test_label, y=data_test_pred21, prop.chisq = FALSE)
+
+data_test_pred25 <- knn(train = data_train, test = data_test, cl = data_train_label, k =25)
+CrossTable(x=data_test_label, y=data_test_pred25, prop.chisq = FALSE)
+```
+
+### 문제4
+**Training set에 대해 5-fold cross validation을 5회 반복하여 best k 값을 찾아보자. best k 값으로 만들어지는 최종 model에 test set을 적용하여 model의 성능을 report하자.**
+
+1. import data
+```{r, message = FALSE}
+data4 <- read_csv("CommonBank.csv")
+```
+```{r}
+str(data4)
+```
+
+
+2. target변수 factor화
+```{r}
+data4$PersonalLoan <- as.factor(data4$PersonalLoan)
+data4$PersonalLoan <- factor(data4$PersonalLoan, levels = c("0","1"), labels = c("Reject","Accept"))
+```
+
+3. feature variables factor화
+```{r}
+
+```
+
+(ID와 ZIP Code Feature 제외)
+
+```{r}
+data4 <- data4[c(-1,-5)]
+```
+
+4. train / test split
+
+```{r}
+data_train <- data4[1:4000,]
+data_train_label <- data4$PersonalLoan[1:4000]
+data_test <- data4[4001:5000,]
+data_test_label <- data4$PersonalLoan[4001:5000]
+```
+
+5. train function의 parameter 설정
+```{r, message = FALSE}
+library(caret)
+z_normalized <- c("center", "scale")
+cv <- trainControl(method="repeatedcv", number = 5, repeats = 5)
+tune_grid <- expand.grid(k = seq(1, 99, 2))
+
+```
+  
+5. train() function으로 k-nn 모델 학습
+```{r}
+knn_fit <- train(data=data_train, PersonalLoan~., method="knn", trControl = cv,
+                 preProcess = z_normalized, tuneGrid = tune_grid)
+knn_fit
+```
+
+
+6. 그래프로 시각화하기
+
+```{r}
+ggplot(knn_fit) + theme_bw()
+```
+
+7. Prediction Error 계산 - extraPrediction() function을 사용하여 최종 model을 test set에 적용하여 prediction error 계산
+```{r}
+knn_pred <- extractPrediction(list(knn_fit), testX = data_test[,-8],
+                              testY=data_test_label)
+test_pred <- knn_pred$pred[knn_pred$dataType == "Test"]
+test_obs <- knn_pred$obs[knn_pred$dataType == "Test"]
+confusionMatrix(test_pred, test_obs, positive = "Accept")
+```
