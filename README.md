@@ -1,7 +1,7 @@
 # 데이터분석및활용 Data analysis and its applications (2150438301)
 
 ## Assignments
-date | task | data | keyword | remarks (3)
+date | task | data | keyword | remarks (out of 3)
 ---- | ---- | ---- | --- | --- 
 20.04.03 | Data visualization |  Metro Dataset (Line 7) | visualization | **3.5**
 20.04.14 | Personal Loan Prediction | CommonBank Client Dataset (5,000) | classification | 3
